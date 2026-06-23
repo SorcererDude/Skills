@@ -100,6 +100,30 @@ Then invoke it in Codex with a scenario:
 Use $windows-azure-diagrams to create SVG, .drawio, PNG, and JPG architecture diagrams for an App Service using managed identity to read Key Vault secrets and write to SQL Database.
 ```
 
+## Installing As A GitHub Copilot Skill
+
+For a personal GitHub Copilot skill available across projects, copy the `windows-azure-diagrams` folder into your user Copilot skills directory. On Windows, `~/.copilot/skills` is under `%USERPROFILE%`.
+
+```powershell
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.copilot\skills" | Out-Null
+Copy-Item -LiteralPath .\windows-azure-diagrams -Destination "$env:USERPROFILE\.copilot\skills" -Recurse -Force
+```
+
+The installed skill should end up at:
+
+```text
+%USERPROFILE%\.copilot\skills\windows-azure-diagrams\SKILL.md
+```
+
+For a repository-scoped Copilot skill, copy the same folder to `.github/skills` in the target repository:
+
+```powershell
+New-Item -ItemType Directory -Force -Path .\.github\skills | Out-Null
+Copy-Item -LiteralPath .\windows-azure-diagrams -Destination .\.github\skills -Recurse -Force
+```
+
+Copilot loads relevant skills based on the `name` and `description` frontmatter in `SKILL.md`.
+
 ## Notes
 
 - The generated SVGs and `.drawio` files are self-contained because icons are embedded as data URIs.
