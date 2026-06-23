@@ -7,441 +7,194 @@ param(
 $ErrorActionPreference = "Stop"
 
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-if ([string]::IsNullOrWhiteSpace($scriptRoot)) {
-    $scriptRoot = (Get-Location).Path
-}
-
+if ([string]::IsNullOrWhiteSpace($scriptRoot)) { $scriptRoot = (Get-Location).Path }
 $iconRoot = Join-Path $scriptRoot "..\assets\icons"
-if (-not (Test-Path -LiteralPath $iconRoot)) {
-    throw "Skill icon assets not found at '$iconRoot'."
-}
-
-if (-not (Test-Path -LiteralPath $OutputDir)) {
-    New-Item -ItemType Directory -Path $OutputDir | Out-Null
-}
-
-$resolvedOutputDir = (Resolve-Path -LiteralPath $OutputDir).Path
+if (-not (Test-Path -LiteralPath $iconRoot)) { throw "Icon assets not found at '$iconRoot'." }
+if (-not (Test-Path -LiteralPath $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir | Out-Null }
 
 $iconFiles = @{
-    "sre-agent" = "sre-agent.svg"
-    "azure-sre-agent" = "sre-agent.svg"
-    "key-vault" = "key-vaults.svg"
-    "key-vaults" = "key-vaults.svg"
-    "app-registration" = "app-registrations.svg"
-    "app-registrations" = "app-registrations.svg"
-    "managed-identity" = "managed-identities.svg"
-    "managed-identities" = "managed-identities.svg"
-    "identity" = "managed-identities.svg"
-    "resource-group" = "resource-groups.svg"
-    "resource-groups" = "resource-groups.svg"
-    "virtual-machine" = "virtual-machine.svg"
-    "vm" = "virtual-machine.svg"
-    "app-service" = "app-services.svg"
-    "app-services" = "app-services.svg"
-    "storage-account" = "storage-accounts.svg"
-    "storage-accounts" = "storage-accounts.svg"
-    "sql-database" = "sql-database.svg"
-    "database" = "sql-database.svg"
+    "sre-agent" = "sre-agent.svg"; "azure-sre-agent" = "sre-agent.svg"
+    "key-vault" = "key-vaults.svg"; "key-vaults" = "key-vaults.svg"
+    "app-registration" = "app-registrations.svg"; "app-registrations" = "app-registrations.svg"
+    "managed-identity" = "managed-identities.svg"; "managed-identities" = "managed-identities.svg"; "identity" = "managed-identities.svg"
+    "resource-group" = "resource-groups.svg"; "resource-groups" = "resource-groups.svg"
+    "virtual-machine" = "virtual-machine.svg"; "vm" = "virtual-machine.svg"
+    "app-service" = "app-services.svg"; "app-services" = "app-services.svg"
+    "storage-account" = "storage-accounts.svg"; "storage-accounts" = "storage-accounts.svg"
+    "sql-database" = "sql-database.svg"; "database" = "sql-database.svg"
     "monitor" = "monitor.svg"
 }
 
-function Get-OptionalValue {
-    param(
-        [object]$Object,
-        [string]$PropertyName,
-        [object]$DefaultValue = $null
-    )
-
-    if ($null -eq $Object) {
-        return $DefaultValue
-    }
-
-    $property = $Object.PSObject.Properties[$PropertyName]
-    if ($null -eq $property -or $null -eq $property.Value) {
-        return $DefaultValue
-    }
-
-    if ($property.Value -is [string] -and [string]::IsNullOrWhiteSpace($property.Value)) {
-        return $DefaultValue
-    }
-
-    return $property.Value
+function Get-Val($Object, [string]$Name, $Default) {
+    if ($null -eq $Object) { return $Default }
+    $p = $Object.PSObject.Properties[$Name]
+    if ($null -eq $p -or $null -eq $p.Value) { return $Default }
+    if ($p.Value -is [string] -and [string]::IsNullOrWhiteSpace($p.Value)) { return $Default }
+    return $p.Value
 }
 
-function ConvertTo-SvgText {
-    param([object]$Value)
-
-    if ($null -eq $Value) {
-        return ""
-    }
-
+function Escape-Svg($Value) {
+    if ($null -eq $Value) { return "" }
     return [System.Security.SecurityElement]::Escape([string]$Value)
 }
 
-function Get-Slug {
-    param([string]$Value)
+function Limit-Text([string]$Value, [int]$Length) {
+    if ([string]::IsNullOrWhiteSpace($Value)) { return "" }
+    if ($Value.Length -le $Length) { return $Value }
+    return $Value.Substring(0, [Math]::Max(1, $Length - 3)) + "..."
+}
 
+function Get-Slug([string]$Value) {
     $slug = $Value.ToLowerInvariant() -replace "[^a-z0-9]+", "-"
     $slug = $slug.Trim("-")
-    if ([string]::IsNullOrWhiteSpace($slug)) {
-        return "diagram"
-    }
-
+    if ([string]::IsNullOrWhiteSpace($slug)) { return "diagram" }
     return $slug
 }
 
-function Split-Text {
-    param(
-        [string]$Text,
-        [int]$MaxChars,
-        [int]$MaxLines
-    )
-
-    if ([string]::IsNullOrWhiteSpace($Text)) {
-        return @()
-    }
-
-    $words = $Text.Trim() -split "\s+"
-    $lines = New-Object System.Collections.Generic.List[string]
-    $current = ""
-
-    foreach ($originalWord in $words) {
-        $word = $originalWord
-        while ($word.Length -gt $MaxChars) {
-            if (-not [string]::IsNullOrWhiteSpace($current)) {
-                $lines.Add($current)
-                $current = ""
-            }
-            $lines.Add($word.Substring(0, [Math]::Max(1, $MaxChars - 1)) + "-")
-            $word = $word.Substring([Math]::Max(1, $MaxChars - 1))
-        }
-
-        if ([string]::IsNullOrWhiteSpace($current)) {
-            $current = $word
-        }
-        elseif (($current.Length + 1 + $word.Length) -le $MaxChars) {
-            $current = "$current $word"
-        }
-        else {
-            $lines.Add($current)
-            $current = $word
-        }
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace($current)) {
-        $lines.Add($current)
-    }
-
-    if ($lines.Count -le $MaxLines) {
-        return [string[]]$lines.ToArray()
-    }
-
-    $trimmed = @()
-    for ($i = 0; $i -lt $MaxLines; $i++) {
-        $trimmed += $lines[$i]
-    }
-    $trimmed[$MaxLines - 1] = ($trimmed[$MaxLines - 1].TrimEnd(".") + "...")
-    return [string[]]$trimmed
+function Get-IconUri([string]$Name) {
+    if ([string]::IsNullOrWhiteSpace($Name)) { return $null }
+    $key = $Name.ToLowerInvariant() -replace "[\s_]+", "-"
+    if ($key.EndsWith(".svg")) { $file = $key }
+    elseif ($iconFiles.ContainsKey($key)) { $file = $iconFiles[$key] }
+    else { return $null }
+    $path = Join-Path $iconRoot $file
+    if (-not (Test-Path -LiteralPath $path)) { throw "Icon not found: $path" }
+    return "data:image/svg+xml;base64,$([Convert]::ToBase64String([IO.File]::ReadAllBytes($path)))"
 }
 
-function New-TextBlockSvg {
-    param(
-        [string]$Text,
-        [int]$X,
-        [int]$Y,
-        [string]$CssClass,
-        [int]$MaxChars,
-        [int]$MaxLines,
-        [int]$LineHeight
-    )
+$defaultScenario = @'
+{
+  "title": "MSP authentication flow to client resources",
+  "description": "Azure SRE Agent uses Key Vault, authenticates with the client, and accesses client resources.",
+  "diagramType": "process",
+  "lanes": [
+    { "id": "msp", "title": "MSP side" },
+    { "id": "client", "title": "Client side" }
+  ],
+  "nodes": [
+    { "id": "sre", "label": "Azure SRE Agent", "subtitle": "support automation agent", "lane": "msp", "icon": "sre-agent", "sequence": "1", "order": 1 },
+    { "id": "vault", "label": "Key Vault", "subtitle": "secrets and certs", "lane": "msp", "icon": "key-vault", "sequence": "2", "order": 2 },
+    { "id": "auth", "label": "Authenticate with client", "subtitle": "client identity boundary", "lane": "client", "icon": "app-registration", "kind": "auth", "order": 1 },
+    { "id": "resources", "label": "Access various resources", "subtitle": "VMs, apps, data, monitor", "lane": "client", "icon": "resource-group", "sequence": "3", "order": 2 }
+  ],
+  "edges": [
+    { "from": "sre", "to": "vault", "label": "retrieves secret" },
+    { "from": "vault", "to": "auth", "label": "presents credential" },
+    { "from": "auth", "to": "resources", "label": "authorized access" }
+  ]
+}
+'@
 
-    $lines = @(Split-Text -Text $Text -MaxChars $MaxChars -MaxLines $MaxLines)
-    $output = New-Object System.Collections.Generic.List[string]
-    for ($i = 0; $i -lt $lines.Count; $i++) {
-        $lineY = $Y + ($i * $LineHeight)
-        $escaped = ConvertTo-SvgText $lines[$i]
-        $output.Add("  <text x=""$X"" y=""$lineY"" class=""$CssClass"">$escaped</text>")
-    }
-
-    return ($output -join "`n")
+$scenario = if ([string]::IsNullOrWhiteSpace($ScenarioPath)) {
+    $defaultScenario | ConvertFrom-Json
+} else {
+    Get-Content -Raw -LiteralPath (Resolve-Path -LiteralPath $ScenarioPath).Path | ConvertFrom-Json
 }
 
-function Get-IconDataUri {
-    param([string]$IconName)
-
-    if ([string]::IsNullOrWhiteSpace($IconName)) {
-        return $null
-    }
-
-    $normalized = $IconName.ToLowerInvariant() -replace "[\s_]+", "-"
-    if ($normalized.EndsWith(".svg")) {
-        $relativePath = $normalized
-    }
-    elseif ($iconFiles.ContainsKey($normalized)) {
-        $relativePath = $iconFiles[$normalized]
-    }
-    else {
-        return $null
-    }
-
-    $path = Join-Path $iconRoot $relativePath
-    if (-not (Test-Path -LiteralPath $path)) {
-        throw "Icon not found: $path"
-    }
-
-    $bytes = [System.IO.File]::ReadAllBytes($path)
-    $base64 = [Convert]::ToBase64String($bytes)
-    return "data:image/svg+xml;base64,$base64"
-}
-
-function New-PlaceholderIconSvg {
-    param(
-        [int]$X,
-        [int]$Y,
-        [int]$Size,
-        [string]$Label
-    )
-
-    $initial = "?"
-    if (-not [string]::IsNullOrWhiteSpace($Label)) {
-        $initial = (ConvertTo-SvgText $Label.Substring(0, 1).ToUpperInvariant())
-    }
-
-    $center = $X + [Math]::Round($Size / 2)
-    $textY = $Y + [Math]::Round($Size / 2) + 7
-    $radius = [Math]::Round($Size / 2)
-    return @"
-  <circle cx="$center" cy="$center" r="$radius" class="placeholderIcon"/>
-  <text x="$center" y="$textY" text-anchor="middle" class="placeholderIconText">$initial</text>
-"@
-}
-
-function Get-DefaultScenario {
-    return [pscustomobject]@{
-        title = "MSP authentication flow to client resources"
-        description = "Azure SRE Agent uses Key Vault, authenticates with the client, and accesses client resources."
-        diagramType = "process"
-        lanes = @(
-            [pscustomobject]@{ id = "msp"; title = "MSP side" },
-            [pscustomobject]@{ id = "client"; title = "Client side" }
-        )
-        nodes = @(
-            [pscustomobject]@{ id = "sre"; label = "Azure SRE Agent"; subtitle = "support automation agent"; lane = "msp"; icon = "sre-agent"; sequence = "1"; order = 1 },
-            [pscustomobject]@{ id = "vault"; label = "Key Vault"; subtitle = "secrets, certs, client auth material"; lane = "msp"; icon = "key-vault"; sequence = "2"; order = 2 },
-            [pscustomobject]@{ id = "auth"; label = "Authenticate with client"; subtitle = "client identity boundary"; lane = "client"; icon = "app-registration"; kind = "auth"; order = 1 },
-            [pscustomobject]@{ id = "resources"; label = "Access various resources"; subtitle = "VMs, apps, storage, databases, monitoring"; lane = "client"; icon = "resource-group"; sequence = "3"; order = 2 }
-        )
-        edges = @(
-            [pscustomobject]@{ from = "sre"; to = "vault"; label = "retrieves secret" },
-            [pscustomobject]@{ from = "vault"; to = "auth"; label = "presents credential" },
-            [pscustomobject]@{ from = "auth"; to = "resources"; label = "authorized access" }
-        )
+$nodes = @()
+$i = 0
+foreach ($n in @(Get-Val $scenario "nodes" @())) {
+    $i++
+    $order = 0.0
+    $orderValue = Get-Val $n "order" $i
+    if (-not [double]::TryParse([string]$orderValue, [ref]$order)) { $order = $i }
+    $id = [string](Get-Val $n "id" "node-$i")
+    $lane = [string](Get-Val $n "lane" (Get-Val $n "group" "main"))
+    $nodes += [pscustomobject]@{
+        Id = $id; Lane = $lane; Order = $order; Index = $i
+        Label = [string](Get-Val $n "label" $id)
+        Subtitle = [string](Get-Val $n "subtitle" "")
+        Icon = [string](Get-Val $n "icon" "")
+        Kind = [string](Get-Val $n "kind" "node")
+        Sequence = [string](Get-Val $n "sequence" "")
     }
 }
+if ($nodes.Count -eq 0) { throw "Scenario must include at least one node." }
 
-function Read-Scenario {
-    param([string]$Path)
-
-    if ([string]::IsNullOrWhiteSpace($Path)) {
-        return Get-DefaultScenario
-    }
-
-    $resolvedPath = (Resolve-Path -LiteralPath $Path).Path
-    return Get-Content -Raw -LiteralPath $resolvedPath | ConvertFrom-Json
-}
-
-$scenario = Read-Scenario -Path $ScenarioPath
-$rawNodes = @(Get-OptionalValue -Object $scenario -PropertyName "nodes" -DefaultValue @())
-if ($rawNodes.Count -eq 0) {
-    throw "Scenario must include at least one node."
-}
-
-$nodes = New-Object System.Collections.Generic.List[object]
-$nodeIndex = 0
-foreach ($rawNode in $rawNodes) {
-    $nodeIndex++
-    $id = [string](Get-OptionalValue -Object $rawNode -PropertyName "id" -DefaultValue "node-$nodeIndex")
-    $label = [string](Get-OptionalValue -Object $rawNode -PropertyName "label" -DefaultValue $id)
-    $lane = [string](Get-OptionalValue -Object $rawNode -PropertyName "lane" -DefaultValue (Get-OptionalValue -Object $rawNode -PropertyName "group" -DefaultValue "main"))
-    $orderValue = Get-OptionalValue -Object $rawNode -PropertyName "order" -DefaultValue $nodeIndex
-    [double]$order = 0
-    if (-not [double]::TryParse([string]$orderValue, [ref]$order)) {
-        $order = $nodeIndex
-    }
-
-    $nodes.Add([pscustomobject]@{
-        Id = $id
-        Label = $label
-        Subtitle = [string](Get-OptionalValue -Object $rawNode -PropertyName "subtitle" -DefaultValue "")
-        Lane = $lane
-        Icon = [string](Get-OptionalValue -Object $rawNode -PropertyName "icon" -DefaultValue "")
-        Kind = [string](Get-OptionalValue -Object $rawNode -PropertyName "kind" -DefaultValue "node")
-        Sequence = [string](Get-OptionalValue -Object $rawNode -PropertyName "sequence" -DefaultValue "")
-        Order = $order
-        InputIndex = $nodeIndex
-    })
-}
-
-$rawLanes = @(Get-OptionalValue -Object $scenario -PropertyName "lanes" -DefaultValue @())
-$lanes = New-Object System.Collections.Generic.List[object]
-if ($rawLanes.Count -gt 0) {
-    foreach ($rawLane in $rawLanes) {
-        $laneId = [string](Get-OptionalValue -Object $rawLane -PropertyName "id" -DefaultValue "")
-        if ([string]::IsNullOrWhiteSpace($laneId)) {
-            continue
-        }
-        $lanes.Add([pscustomobject]@{
-            Id = $laneId
-            Title = [string](Get-OptionalValue -Object $rawLane -PropertyName "title" -DefaultValue $laneId)
-        })
+$lanes = @()
+foreach ($l in @(Get-Val $scenario "lanes" @())) {
+    $id = [string](Get-Val $l "id" "")
+    if (-not [string]::IsNullOrWhiteSpace($id)) {
+        $lanes += [pscustomobject]@{ Id = $id; Title = [string](Get-Val $l "title" $id) }
     }
 }
-
-foreach ($laneId in @($nodes | ForEach-Object { $_.Lane } | Select-Object -Unique)) {
-    if (-not ($lanes | Where-Object { $_.Id -eq $laneId })) {
-        $lanes.Add([pscustomobject]@{ Id = $laneId; Title = $laneId })
-    }
+foreach ($laneId in @($nodes | ForEach-Object Lane | Select-Object -Unique)) {
+    if (-not ($lanes | Where-Object { $_.Id -eq $laneId })) { $lanes += [pscustomobject]@{ Id = $laneId; Title = $laneId } }
 }
 
-if ($lanes.Count -eq 0) {
-    $lanes.Add([pscustomobject]@{ Id = "main"; Title = "Flow" })
-}
-
-$rawEdges = @(Get-OptionalValue -Object $scenario -PropertyName "edges" -DefaultValue @())
-$edges = New-Object System.Collections.Generic.List[object]
-foreach ($rawEdge in $rawEdges) {
-    $from = [string](Get-OptionalValue -Object $rawEdge -PropertyName "from" -DefaultValue "")
-    $to = [string](Get-OptionalValue -Object $rawEdge -PropertyName "to" -Defaulue "")
-    if ([string]::IsNullOrWhiteSpace($from) -or [string]::IsNullOrWhiteSpace($to)) {
-        continue
-    }
-    $edges.Add([pscustomobject]@{
-        From = $from
-        To = $to
-        Label = [string](Get-OptionalValue -Object $rawEdge -PropertyName "label" -DefaultValue "")
-    })
-}
-
-$margin = 36
-$laneGap = 28
-$laneWidth = 360
-$nodeWidth = 282
-$nodeHeight = 96
-$nodeGap = 42
-$headerHeight = 104
-$bottomMargin = 52
-$topMargin = 30
-
-$maxLaneNodes = 1
-foreach ($lane in $lanes) {
-    $count = @($nodes | Where-Object { $_.Lane -eq $lane.Id }).Count
-    if ($count -gt $maxLaneNodes) {
-        $maxLaneNodes = $count
-    }
-}
-
-$width = ($margin * 2) + ($lanes.Count * $laneWidth) + (($lanes.Count - 1) * $laneGap)
-$height = [Math]::Max(520, $topMargin + $headerHeight + ($maxLaneNodes * $nodeHeight) + (($maxLaneNodes - 1) * $nodeGap) + $bottomMargin)
-
-$laneMap = @{}
-for ($i = 0; $i -lt $lanes.Count; $i++) {
-    $laneMap[$lanes[$i].Id] = [pscustomobject]@{
-        Index = $i
-        X = $margin + ($i * ($laneWidth + $laneGap))
-        Y = $topMargin + 64
-        Width = $laneWidth
-        Height = $height - $topMargin - 84
-    }
-}
-
-$nodeLayout = @{}
-foreach ($lane in $lanes) {
-    $laneNodes = @($nodes | Where-Object { $_.Lane -eq $lane.Id } | Sort-Object Order, InputIndex)
-    for ($i = 0; $i -lt $laneNodes.Count; $i++) {
-        $laneBox = $laneMap[$lane.Id]
-        $x = [int]($laneBox.X + (($laneWidth - $nodeWidth) / 2))
-        $y = [int]($topMargin + $headerHeight + ($i * ($nodeHeight + $nodeGap)))
-        $nodeLayout[$laneNodes[$i].Id] = [pscustomobject]@{
-            X = $x
-            Y = $y
-            Width = $nodeWidth
-            Height = $nodeHeight
-            LaneIndex = $laneBox.Index
-            Node = $laneNodes[$i]
-        }
-    }
-}
-
-$title = [string](Get-OptionalValue -Object $scenario -PropertyName "title" -DefaultValue "Azure diagram")
-$description = [string](Get-OptionalValue -Object $scenario -PropertyName "description" -DefaultValue "")
-$diagramType = [string](Get-OptionalValue -Object $scenario -PropertyName "diagramType" -DefaultValue "process")
+$edges = @(Get-Val $scenario "edges" @())
+$title = [string](Get-Val $scenario "title" "Azure diagram")
+$description = [string](Get-Val $scenario "description" "")
+$diagramType = [string](Get-Val $scenario "diagramType" "process")
 $fileName = if ([string]::IsNullOrWhiteSpace($Name)) { Get-Slug $title } else { $Name }
-if (-not $fileName.ToLowerInvariant().EndsWith(".svg")) {
-    $fileName = "$fileName.svg"
+if (-not $fileName.ToLowerInvariant().EndsWith(".svg")) { $fileName = "$fileName.svg" }
+
+$laneW = 360; $laneGap = 28; $nodeW = 282; $nodeH = 96; $rowGap = 42; $margin = 36; $top = 138
+$maxRows = 1
+foreach ($lane in $lanes) { $maxRows = [Math]::Max($maxRows, @($nodes | Where-Object Lane -eq $lane.Id).Count) }
+$width = ($margin * 2) + ($lanes.Count * $laneW) + (($lanes.Count - 1) * $laneGap)
+$height = [Math]::Max(520, $top + ($maxRows * $nodeH) + (($maxRows - 1) * $rowGap) + 58)
+
+$laneBox = @{}; $nodeBox = @{}
+for ($l = 0; $l -lt $lanes.Count; $l++) {
+    $laneBox[$lanes[$l].Id] = [pscustomobject]@{ X = $margin + ($l * ($laneW + $laneGap)); Y = 92; W = $laneW; H = $height - 112 }
+    $laneNodes = @($nodes | Where-Object Lane -eq $lanes[$l].Id | Sort-Object Order, Index)
+    for ($r = 0; $r -lt $laneNodes.Count; $r++) {
+        $nodeBox[$laneNodes[$r].Id] = [pscustomobject]@{
+            X = $laneBox[$lanes[$l].Id].X + [int](($laneW - $nodeW) / 2)
+            Y = $top + ($r * ($nodeH + $rowGap)); W = $nodeW; H = $nodeH
+        }
+    }
 }
 
 $svg = New-Object System.Collections.Generic.List[string]
 $svg.Add("<svg xmlns=""http://www.w3.org/2000/svg"" width=""$width"" height=""$height"" viewBox=""0 0 $width $height"" role=""img"" aria-labelledby=""title desc"">")
-$svg.Add("  <title id=""title"">$(ConvertTo-SvgText $title)</title>")
-$svg.Add("  <desc id=""desc"">$(ConvertTo-SvgText $description)</desc>")
-$svg.Add(@"
-  <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#233142"/>
-    </marker>
-    <style>
-      text { font-family: Segoe UI, Arial, sans-serif; fill: #1f2937; }
-      .diagramTitle { font-size: 24px; font-weight: 700; }
-      .diagramSub { font-size: 13px; fill: #526070; }
-      .lane { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 2; rx: 8; }
-      .lane:nth-of-type(2n) { fill: #f4fbf7; }
-      .laneTitle { font-size: 17px; font-weight: 700; fill: #334155; }
-      .card { fill: #ffffff; stroke: #9aa8b8; stroke-width: 1.8; rx: 8; }
-      .auth { fill: #fff7ed; stroke: #ea8a16; stroke-width: 2; rx: 8; }
-      .data { fill: #f0f9ff; stroke: #0284c7; stroke-width: 1.8; rx: 8; }
-      .external { fill: #f8fafc; stroke: #64748b; stroke-width: 1.8; stroke-dasharray: 6 5; rx: 8; }
-      .nodeTitle { font-size: 14px; font-weight: 700; }
-      .nodeSub { font-size: 12px; fill: #64748b; }
-      .sequence { font-size: 11px; font-weight: 700; fill: #475569; }
-      .edge { fill: none; stroke: #233142; stroke-width: 2.2; marker-end: url(#arrow); }
-      .edgeLabel { font-size: 12px; font-weight: 600; fill: #334155; }
-      .edgeLabelBg { fill: #ffffff; opacity: 0.86; rx: 5; }
-      .placeholderIcon { fill: #e2e8f0; stroke: #94a3b8; stroke-width: 1.5; }
-      .placeholderIconText { font-size: 22px; font-weight: 700; fill: #475569; }
-      .meta { font-size: 11px; fill: #64748b; text-transform: uppercase; }
-    </style>
-  </defs>
-"A)
-$svg.Add("  <rect x=""0"" y=""0"" width=""$width"" height=""$height"" fill=""#ffffff""/>")
-$svg.Add((New-TextBlockSvg -Text $title -X 36 -Y 42 -CssClass "diagramTitle" -MaxChars 78 -MaxLines 1 -LineHeight 28))
-if (-not [string]::IsNullOrWhiteSpace($description)) {
-    $svg.Add((New-TextBlockSvg -Text $description -X 36 -Y 66 -CssClass "diagramSub" -MaxChars 126 -MaxLines 1 -LineHeight 18))
-}
-$svg.Add("  <text x=""$($width - 36)"" y=""42"" text-anchor=""end"" class=""meta"">$(ConvertTo-SvgText $diagramType)</text>")
+$svg.Add("<title id=""title"">$(Escape-Svg $title)</title><desc id=""desc"">$(Escape-Svg $description)</desc>")
+$svg.Add('<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto"><path d="M0 0L10 5L0 10z" fill="#233142"/></marker><style>text{font-family:Segoe UI,Arial,sans-serif;fill:#1f2937}.t{font-size:24px;font-weight:700}.s{font-size:13px;fill:#526070}.lane{fill:#f8fafc;stroke:#cbd5e1;stroke-width:2;rx:8}.lt{font-size:17px;font-weight:700}.card{fill:#fff;stroke:#9aa8b8;stroke-width:1.8;rx:8}.auth{fill:#fff7ed;stroke:#ea8a16;stroke-width:2;rx:8}.data{fill:#f0f9ff;stroke:#0284c7;stroke-width:1.8;rx:8}.external{fill:#f8fafc;stroke:#64748b;stroke-dasharray:6 5;stroke-width:1.8;rx:8}.nt{font-size:14px;font-weight:700}.ns{font-size:12px;fill:#64748b}.seq{font-size:11px;font-weight:700;fill:#475569}.edge{fill:none;stroke:#233142;stroke-width:2.2;marker-end:url(#arrow)}.el{font-size:12px;font-weight:600;fill:#334155}.eb{fill:#fff;opacity:.86;rx:5}.ph{fill:#e2e8f0;stroke:#94a3b8;stroke-width:1.5}.pt{font-size:22px;font-weight:700;fill:#475569}</style></defs>')
+$svg.Add("<rect x=""0"" y=""0"" width=""$width"" height=""$height"" fill=""#fff""/>")
+$svg.Add("<text x=""36"" y=""42"" class=""t"">$(Escape-Svg (Limit-Text $title 72))</text>")
+if ($description) { $svg.Add("<text x=""36"" y=""66"" class=""s"">$(Escape-Svg (Limit-Text $description 126))</text>") }
+$svg.Add("<text x=""$($width - 36)"" y=""42"" text-anchor=""end"" class=""s"">$(Escape-Svg $diagramType)</text>")
 
 foreach ($lane in $lanes) {
-    $box = $laneMap[$lane.Id]
-    $svg.Add("  <rect x=""$($box.X)"" y=""$($box.Y)"" width=""$($box.Width)"" height=""$($box.Height)"" class=""lane""/>")
-    $svg.Add((New-TextBlockSvg -Text $lane.Title -X ($box.X + 20) -Y ($box.Y + 34) -CssClass "laneTitle" -MaxChars 34 -MaxLines 1 -LineHeight 20))
+    $b = $laneBox[$lane.Id]
+    $svg.Add("<rect x=""$($b.X)"" y=""$($b.Y)"" width=""$($b.W)"" height=""$($b.H)"" class=""lane""/>")
+    $svg.Add("<text x=""$($b.X + 20)"" y=""$($b.Y + 34)"" class=""lt"">$(Escape-Svg (Limit-Text $lane.Title 34))</text>")
 }
 
 foreach ($edge in $edges) {
-    if (-not $nodeLayout.ContainsKey($edge.From) -or -not $nodeLayout.ContainsKey($edge.To)) {
-        Write-Warning "Skipping edge '$($edge.From)' -> '$($edge.To)' because one endpoint was not found."
-        continue
+    $from = [string](Get-Val $edge "from" ""); $to = [string](Get-Val $edge "to" "")
+    if (-not $nodeBox.ContainsKey($from) -or -not $nodeBox.ContainsKey($to)) { continue }
+    $a = $nodeBox[$from]; $b = $nodeBox[$to]
+    $x1 = $a.X + $a.W; $y1 = $a.Y + [int]($a.H / 2); $x2 = $b.X; $y2 = $b.Y + [int]($b.H / 2)
+    if ($x2 -gt $x1) { $path = "M $x1 $y1 C $($x1 + 70) $y1 $($x2 - 70) $y2 $x2 $y2" }
+    else { $path = "M $x1 $y1 L $($x1 + 34) $y1 L $($x1 + 34) $y2 L $($b.X + $b.W) $y2" }
+    $svg.Add("<path d=""$path"" class=""edge""/>")
+    $label = [string](Get-Val $edge "label" "")
+    if ($label) {
+        $lx = [int](($x1 + $x2) / 2); $ly = [int](($y1 + $y2) / 2) - 8
+        $svg.Add("<rect x=""$($lx - 58)"" y=""$($ly - 15)"" width=""116"" height=""22"" class=""eb""/><text x=""$lx"" y=""$ly"" text-anchor=""middle"" class=""el"">$(Escape-Svg (Limit-Text $label 18))</text>")
     }
+}
 
-    $fromBox = $nodeLayout[$edge.From]
-    $toBox = $nodeLayout[$edge.To]
-    $fromRightX = $fromBox.X + $fromBox.Width
-    $fromLeftX = $fromBox.X
-    $fromY = $fromBox.Y + [Math]::Round($fromBox.Height / 2)
-    $toLeftX = $toBox.X
-    $toRightX = $toBox.X + $toBox.Width
-    $toY = $toBox.Y + [Math]::Round($toBox.Height / 2)
+foreach ($n in $nodes) {
+    $b = $nodeBox[$n.Id]
+    $class = if ($n.Kind -in @("auth","identity","trust")) { "auth" } elseif ($n.Kind -in @("data","database")) { "data" } elseif ($n.Kind -eq "external") { "external" } else { "card" }
+    $svg.Add("<rect x=""$($b.X)"" y=""$($b.Y)"" width=""$($b.W)"" height=""$($b.H)"" class=""$class""/>")
+    $ix = $b.X + 18; $iy = $b.Y + 20; $uri = Get-IconUri $n.Icon
+    if ($uri) { $svg.Add("<image href=""$uri"" x=""$ix"" y=""$iy"" width=""56"" height=""56""/>") }
+    else {
+        $initial = if ($n.Label) { (Escape-Svg $n.Label.Substring(0,1).ToUpperInvariant()) } else { "?" }
+        $svg.Add("<circle cx=""$($ix + 28)"" cy=""$($iy + 28)"" r=""28"" class=""ph""/><text x=""$($ix + 28)"" y=""$($iy + 35)"" text-anchor=""middle"" class=""pt"">$initial</text>")
+    }
+    $tx = $b.X + 88
+    if ($n.Sequence) { $svg.Add("<text x=""$tx"" y=""$($b.Y + 24)"" class=""seq"">$(Escape-Svg $n.Sequence)</text>"); $titleY = $b.Y + 45 }
+    else { $titleY = $b.Y + 33 }
+    $svg.Add("<text x=""$tx"" y=""$titleY"" class=""nt"">$(Escape-Svg (Limit-Text $n.Label 28))</text>")
+    if ($n.Subtitle) { $svg.Add("<text x=""$tx"" y=""$($b.Y + 76)"" class=""ns"">$(Escape-Svg (Limit-Text $n.Subtitle 34))</text>") }
+}
 
-    if ($toBox.X -gt $fromBox.X) {
-        $x1 = $fromRightX
-        $x2 = $toLeftX
-        $c1 = $x1 + [Math]::Min(110, [Math]::Max(50, [Math]::Round(($x2 - $x1) / 2)))
-        $c2 = $x2 - [Math]::Min(110, [Math]::Max(50, [Math]::Round((‘àÈ€´€‘àÄ¤€¼€È¤¤¤(€€€€€€€€‘Á…Ñ €ô€‰4€‘àÄ€‘™É½µd€‘ŒÄ€‘™É½µd€‘ŒÈ€‘Ñ½d€‘àÈ€‘Ñ½dˆ(€€€ô(€€€•±Í•¥˜€ ‘Ñ½	½à¹`€µ±Ğ€‘™É½µ	½à¹`¤ì(€€€€€€€€‘àÄ€ô€‘™É½µ1•™Ñ`(€€€€€€€€‘àÈ€ô€‘Ñ½I¥¡Ñ`(€€€€€€€€‘ŒÄ€ô€‘àÄ€´€äÀ(€€€€€€€€‘ŒÈ€ô€‘àÈ€¬€äÀ(€€€€€€€€‘Á…Ñ €ô€‰4€‘àÄ€‘™É½µd€‘ŒÄ€‘™É½µd€‘ŒÈ€‘Ñ½d€‘àÈ€‘Ñ½dˆ(€€€ô(€€€•±Í”ì(€€€€€€€€‘àÄ€ô€‘™É½µI¥¡Ñ`(€€€€€€€€‘àÈ€ô€‘Ñ½I¥¡Ñ`(€€€€€€€€‘Í¥‘•`€ô€‘™É½µI¥¡Ñ`€¬€ÌĞ(€€€€€€€€‘Á…Ñ €ô€‰4€‘àÄ€‘™É½µd0€‘Í¥‘•`€‘™É½µd0€‘Í¥‘•`€‘Ñ½d0€‘àÈ€‘Ñ½dˆ(€€€ô((€€€€‘ÍÙœ¹‘ ˆ€€ñÁ…Ñ ôˆˆ‘Á…Ñ ˆˆ±…ÍÌôˆ‰•‘”ˆˆ¼øˆ¤(€€€¥˜€ µ¹½ĞmÍÑÉ¥¹tèé%Í9Õ±±=É]¡¥Ñ•MÁ…” ‘•‘”¹1…‰•°¤¤ì(€€€€€€€€‘±…‰•±`€ôm¥¹Ñt  ‘™É½µI¥¡Ñ`€¬€‘Ñ½1•™Ñ`¤€¼€È¤(€€€€€€€¥˜€ ‘Ñ½	½à¹`€µ±”€‘™É½µ	½à¹`¤ì(€€€€€€€€€€€€‘±…‰•±`€ôm¥¹Ñt  ‘™É½µ1•™Ñ`€¬€‘Ñ½I¥¡Ñ`¤€¼€È¤(€€€€€€€ô(€€€€€€€€‘±…‰•±d€ôm¥¹Ñt  ‘™É½µd€¬€‘Ñ½d¤€¼€È¤€´€à(€€€€€€€€‘±…‰•°€ô½¹Ù•ÉÑQ¼µMÙQ•áĞ€‘•‘”¹1…‰•°(€€€€€€€€‘ÍÙœ¹‘ ˆ€€ñÉ•Ğàôˆˆ ‘±…‰•±`€´€Ôà¤ˆˆäôˆˆ ‘±…‰•±d€´€ÄÔ¤ˆˆİ¥‘Ñ ôˆˆÄÄØˆˆ¡•¥¡ĞôˆˆÈÈˆˆ±…ÍÌôˆ‰•‘•1…‰•±	œˆˆ¼øˆ¤(€€€€€€€€‘ÍÙœ¹‘ ˆ€€ñÑ•áĞàôˆˆ‘±…‰•±`ˆˆäôˆˆ‘±…‰•±dˆˆÑ•áĞµ…¹¡½Èôˆ‰µ¥‘‘±”ˆˆ±…ÍÌôˆ‰•‘•1…‰•°ˆˆø‘±…‰•°ğ½Ñ•áĞøˆ¤(€€€ô)ô()™½É•… € ‘¹½‘”¥¸€‘¹½‘•Ì¤ì(€€€€‘‰½à€ô€‘¹½‘•1…å½ÕÑl‘¹½‘”¹%‘t(€€€€‘…É‘±…ÍÌ€ôÍİ¥Ñ € ‘¹½‘”¹-¥¹¹Q½1½İ•É%¹Ù…É¥…¹Ğ ¤¤ì(€€€€€€€€‰…ÕÑ ˆì€‰…ÕÑ ˆô(€€€€€€€€‰¥‘•¹Ñ¥Ñäˆì€‰…ÕÑ ˆô(€€€€€€€€‰ÑÉÕÍĞˆì€‰…ÕÑ ˆô(€€€€€€€€‰‘…Ñ„ˆì€‰‘…Ñ„ˆô(€€€€€€€€‰‘…Ñ…‰…Í”ˆì€‰‘…Ñ„ˆô(€€€€€€€€‰•áÑ•É¹…°ˆì€‰•áÑ•É¹…°ˆô(€€€€€€€‘•™…Õ±Ğì€‰…Éˆô(€€€ô((€€€€‘ÍÙœ¹‘ ˆ€€ñÉ•Ğàôˆˆ ‘‰½à¹`¤ˆˆäôˆˆ ‘‰½à¹dˆˆİ¥‘Ñ ôˆˆ ‘‰½à¹]¥‘Ñ ¤ˆˆ¡•¥¡Ğôˆˆ ‘‰½à¹!•¥¡Ğ¤ˆˆ±…ÍÌôˆˆ‘…É‘±…ÍÌˆˆ¼øˆ¤((€€€€‘¥½¹`€ô€‘‰½à¹`€¬€Äà(€€€€‘¥½¹d€ô€‘‰½à¹d€¬€ÈÀ(€€€€‘¥½¹M¥é”€ô€ÔØ(€€€€‘¥½¹UÉ¤€ô•Ğµ%½¹…Ñ…UÉ¤€µ%½¹9…µ”€‘¹½‘”¹%½¸(€€€¥˜€ ‘¹Õ±°€µ¹”€‘¥½¹UÉ¤¤ì(€€€€€€€€‘ÍÙœ¹‘ ˆ€€ñ¥µ…”¡É•˜ôˆˆ‘¥½¹UÉ¤ˆˆàôˆˆ‘¥½¹`ˆˆäôˆˆ‘¥½¹dˆˆİ¥‘Ñ ôˆˆ‘¥½¹M¥é”ˆˆ¡•¥¡Ğôˆˆ‘¥½¹M¥é”ˆˆ¼øˆ¤(€€€ô(€€€•±Í”ì(€€€€€€€€‘ÍÙœ¹‘ ¡9•ÜµA±…•¡½±‘•É%½¹MÙœ€µ`€‘¥½¹`€µd€‘¥½¹d€µM¥é”€‘¥½¹M¥é”€µ1…‰•°€‘¹½‘”¹1…‰•°¤¤(€€€ô((€€€€‘Ñ•áÑ`€ô€‘‰½à¹`€¬€àà(€€€¥˜€ µ¹½ĞmÍÑÉ¥¹tèé%Í9Õ±±=É]¡¥Ñ•MÁ…” ‘¹½‘”¹M•ÅÕ•¹”¤¤ì(€€€€€€€€‘Í•ÅÕ•¹”€ô½¹Ù•ÉÑQ¼µMÙQ•áĞ€‘¹½‘”¹M•ÅÕ•¹”(€€€€€€€€‘ÍÙœ¹‘ ˆ€€ñÑ•áĞàôˆˆ‘Ñ•áÑ`ˆˆäôˆˆ ‘‰½à¹d€¬€ÈĞ¤ˆˆ±…ÍÌôˆ‰Í•ÅÕ•¹”ˆˆø‘Í•ÅÕ•¹”ğ½Ñ•áĞøˆ¤(€€€€€€€€‘Ñ¥Ñ±•d€ô€‘‰½à¹d€¬€ĞÔ(€€€ô(€€€•±Í”ì(€€€€€€€€‘Ñ¥Ñ±•d€ô€‘‰½à¹d€¬€ÌÌ(€€€ô((€€€€‘ÍÙœ¹‘ ¡9•ÜµQ•áÑ	±½­MÙœ€µQ•áĞ€‘¹½‘”¹1…‰•°€µ`€‘Ñ•áÑ`€µd€‘Ñ¥Ñ±•d€µÍÍ±…ÍÌ€‰¹½‘•Q¥Ñ±”ˆ€µ5…á¡…ÉÌ€ÈÔ€µ5…á1¥¹•Ì€È€µ1¥¹•!•¥¡Ğ€ÄÜ¤¤(€€€¥˜€ µ¹½ĞmÍÑÉ¥¹tèé%Í9Õ±±=É]¡¥Ñ•MÁ…” ‘¹½‘”¹MÕ‰Ñ¥Ñ±”¤¤ì(€€€€€€€€‘ÍÙœ¹‘ ¡9•ÜµQ•áÑ	±½­MÙœ€µQ•áĞ€‘¹½‘”¹MÕ‰Ñ¥Ñ±”€µ`€‘Ñ•áÑ`€µd€ ‘‰½à¹d€¬€ÜØ¤€µÍÍ±…ÍÌ€‰¹½‘•MÕˆˆ€µ5…á¡…ÉÌ€ÌÄ€µ5…á1¥¹•Ì€Ä€µ1¥¹•!•¥¡Ğ€ÄÔ¤¤(€€€ô)ô((‘ÍÙœ¹‘ ˆğ½ÍÙœøˆ¤((‘½ÕÑÁÕÑA…Ñ €ô)½¥¸µA…Ñ €‘É•Í½±Ù•‘=ÕÑÁÕÑ¥È€‘™¥±•9…µ”)mMåÍÑ•´¹%<¹¥±•tèé]É¥Ñ•±±Q•áĞ ‘½ÕÑÁÕÑA…Ñ °€ ‘ÍÙœ€µ©½¥¸€‰¸ˆ¤°mMåÍÑ•´¹Q•áĞ¹UQá¹½‘¥¹tèé¹•Ü ‘™…±Í”¤¤)]É¥Ñ”µ!½ÍĞ€‰]É½Ñ”€‘½ÕÑÁÕÑA…Ñ ˆ(
+$svg.Add("</svg>")
+$outputPath = Join-Path (Resolve-Path -LiteralPath $OutputDir).Path $fileName
+[IO.File]::WriteAllText($outputPath, ($svg -join "`n"), [Text.UTF8Encoding]::new($false))
+Write-Host "Wrote $outputPath"
