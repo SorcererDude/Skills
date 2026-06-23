@@ -1,13 +1,13 @@
 ---
 name: windows-azure-diagrams
-description: Generate arbitrary Azure architecture and process-flow diagrams in locked-down Windows environments where Graphviz, Mermaid tooling, extra executables, or DLLs are not allowed. Use when the user provides any Azure scenario, resource interaction, MSP/client flow, authentication flow, or architecture/process diagram request and needs SVG, PNG, or JPG output with real Azure service icons.
+description: Generate arbitrary Azure architecture and process-flow diagrams in locked-down Windows environments where Graphviz, Mermaid tooling, extra executables, or DLLs are not allowed. Use when the user provides any Azure scenario, resource interaction, MSP/client flow, authentication flow, or architecture/process diagram request and needs SVG, editable Draw.io .drawio, PNG, or JPG output with real Azure service icons.
 ---
 
 # Windows Azure Diagrams
 
 ## Overview
 
-Create Azure architecture or process-flow diagrams by translating the user's scenario into a small JSON model, then rendering it with bundled PowerShell and SVG icon assets. Use installed Microsoft Edge only for PNG/JPG export. Do not add Graphviz, Mermaid CLIs, npm packages, EXE files, or DLL files.
+Create Azure architecture or process-flow diagrams by translating the user's scenario into a small JSON model, then rendering it with bundled PowerShell and SVG icon assets. Generate SVG for reports and editable Draw.io `.drawio` files when the user needs to revise the diagram later. Use installed Microsoft Edge only for PNG/JPG export. Do not add Graphviz, Mermaid CLIs, npm packages, EXE files, or DLL files.
 
 The bundled MSP/SRE flow is only the default example when no scenario is supplied. For real work, generate a scenario JSON file from the user's requested flow and pass it to `scripts/New-AzureProcessFlow.ps1`.
 
@@ -18,10 +18,10 @@ The bundled MSP/SRE flow is only the default example when no scenario is supplie
    - nodes, including resource names, short subtitles, icon choices, and optional sequence numbers
    - edges, including direction and concise labels
 2. Write a scenario JSON file. Read `references/scenario-schema.md` when you need the schema, icon keys, or a compact example.
-3. Generate SVG:
+3. Generate SVG and editable Draw.io files:
 
 ```powershell
-.\scripts\New-AzureProcessFlow.ps1 -ScenarioPath scenario.json -OutputDir diagrams -Name requested-diagram
+.\scripts\New-AzureProcessFlow.ps1 -ScenarioPath scenario.json -OutputDir diagrams -Name requested-diagram -OutputFormat Both
 ```
 
 4. Export PNG/JPG when requested:
@@ -30,7 +30,7 @@ The bundled MSP/SRE flow is only the default example when no scenario is supplie
 .\scripts\Export-SvgRasterImages.ps1 -InputDir diagrams -OutputDir raster -Filter requested-diagram.svg -Format Both
 ```
 
-Use `-Format Png` or `-Format Jpg` when only one raster format is needed.
+Use `-OutputFormat Svg` or `-OutputFormat Drawio` when only one diagram source format is needed. Use `-Format Png` or `-Format Jpg` when only one raster format is needed.
 
 ## Scenario Authoring
 
@@ -47,8 +47,9 @@ Keep diagrams readable:
 
 ## Script Guidance
 
-- `scripts/New-AzureProcessFlow.ps1` accepts `-ScenarioPath` JSON and generates a self-contained SVG with embedded icon data URIs.
+- `scripts/New-AzureProcessFlow.ps1` accepts `-ScenarioPath` JSON and generates a self-contained SVG, an editable `.drawio` file, or both with embedded icon data URIs.
 - If `-ScenarioPath` is omitted, the script renders the built-in MSP SRE Agent to Key Vault to client resources example as a smoke test.
+- Use `-OutputFormat Both` when a report-ready SVG and editable diagrams.net source should stay paired from the same scenario JSON.
 - `scripts/Export-SvgRasterImages.ps1` renders SVG to PNG using the installed Microsoft Edge binary in headless mode, then uses .NET `System.Drawing` to create JPG copies with a white background.
 - Keep outputs in user-specified folders. Default to `diagrams/` for SVG and `raster/` for PNG/JPG.
 - If Edge is not on `PATH`, the exporter checks the standard Windows install paths.
@@ -57,9 +58,9 @@ Keep diagrams readable:
 
 After generation:
 
-1. Parse generated SVGs as XML.
+1. Parse generated SVGs and `.drawio` files as XML.
 2. For PNG/JPG output, check dimensions with .NET `System.Drawing`.
 3. Visually inspect at least one changed PNG when layout, labels, icons, or routing changed.
 4. Scan the skill/output workspace for added `.exe` and `.dll` files when the user has application-whitelisting constraints.
 
-Prefer fixing the scenario JSON or script and regenerating outputs over editing raster files directly.
+Prefer fixing the scenario JSON or script and regenerating outputs over editing raster files directly. Use the generated `.drawio` file when the user needs manual visual editing in diagrams.net.

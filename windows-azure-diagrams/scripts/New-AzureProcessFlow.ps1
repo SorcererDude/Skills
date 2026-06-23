@@ -1,7 +1,9 @@
 param(
     [string]$ScenarioPath,
     [string]$OutputDir = "diagrams",
-    [string]$Name
+    [string]$Name,
+    [ValidateSet("Svg", "Drawio", "Both")]
+    [string]$OutputFormat = "Svg"
 )
 
 $ErrorActionPreference = "Stop"
@@ -60,6 +62,18 @@ function Get-IconUri([string]$Name) {
     $path = Join-Path $iconRoot $file
     if (-not (Test-Path -LiteralPath $path)) { throw "Icon not found: $path" }
     return "data:image/svg+xml;base64,$([Convert]::ToBase64String([IO.File]::ReadAllBytes($path)))"
+}
+
+function Get-CellId([string]$Prefix, [string]$Value) {
+    $safe = $Value.ToLowerInvariant() -replace "[^a-z0-9]+", "-"
+    $safe = $safe.Trim("-")
+    if ([string]::IsNullOrWhiteSpace($safe)) { $safe = "item" }
+    return "$Prefix-$safe"
+}
+
+function Escape-DrawioStyleValue([string]$Value) {
+    if ($null -eq $Value) { return "" }
+    return $Value.Replace(";", "%3B")
 }
 
 $defaultScenario = @'
@@ -126,8 +140,10 @@ $edges = @(Get-Val $scenario "edges" @())
 $title = [string](Get-Val $scenario "title" "Azure diagram")
 $description = [string](Get-Val $scenario "description" "")
 $diagramType = [string](Get-Val $scenario "diagramType" "process")
-$fileName = if ([string]::IsNullOrWhiteSpace($Name)) { Get-Slug $title } else { $Name }
-if (-not $fileName.ToLowerInvariant().EndsWith(".svg")) { $fileName = "$fileName.svg" }
+$baseName = if ([string]::IsNullOrWhiteSpace($Name)) { Get-Slug $title } else { [IO.Path]::GetFileNameWithoutExtension($Name) }
+if ([string]::IsNullOrWhiteSpace($baseName)) { $baseName = Get-Slug $title }
+$svgFileName = "$baseName.svg"
+$drawioFileName = "$baseName.drawio"
 
 $laneW = 360; $laneGap = 28; $nodeW = 282; $nodeH = 96; $rowGap = 42; $margin = 36; $top = 138
 $maxRows = 1
@@ -147,6 +163,7 @@ for ($l = 0; $l -lt $lanes.Count; $l++) {
     }
 }
 
+if ($OutputFormat -in @("Svg", "Both")) {
 $svg = New-Object System.Collections.Generic.List[string]
 $svg.Add("<svg xmlns=""http://www.w3.org/2000/svg"" width=""$width"" height=""$height"" viewBox=""0 0 $width $height"" role=""img"" aria-labelledby=""title desc"">")
 $svg.Add("<title id=""title"">$(Escape-Svg $title)</title><desc id=""desc"">$(Escape-Svg $description)</desc>")
@@ -195,6 +212,72 @@ foreach ($n in $nodes) {
 }
 
 $svg.Add("</svg>")
-$outputPath = Join-Path (Resolve-Path -LiteralPath $OutputDir).Path $fileName
+$outputPath = Join-Path (Resolve-Path -LiteralPath $OutputDir).Path $svgFileName
 [IO.File]::WriteAllText($outputPath, ($svg -join "`n"), [Text.UTF8Encoding]::new($false))
 Write-Host "Wrote $outputPath"
+}
+
+if ($OutputFormat -in @("Drawio", "Both")) {
+$drawio = New-Object System.Collections.Generic.List[string]
+$drawio.Add('<mxfile host="app.diagrams.net" type="device">')
+$drawio.Add("  <diagram id=""$(Get-Slug $title)"" name=""Page-1"">")
+$drawio.Add("    <mxGraphModel dx=""1200"" dy=""800"" grid=""1"" gridSize=""10"" guides=""1"" tooltips=""1"" connect=""1"" arrows=""1"" fold=""1"" page=""1"" pageScale=""1"" pageWidth=""$width"" pageHeight=""$height"" math=""0"" shadow=""0"">")
+$drawio.Add('      <root><mxCell id="0"/><mxCell id="1" parent="0"/>')
+$drawio.Add("        <mxCell id=""title"" value=""$(Escape-Svg (Limit-Text $title 72))"" style=""text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=24;fontStyle=1"" vertex=""1"" parent=""1""><mxGeometry x=""36"" y=""16"" width=""$($width - 180)"" height=""32"" as=""geometry""/></mxCell>")
+if ($description) {
+    $drawio.Add("        <mxCell id=""description"" value=""$(Escape-Svg (Limit-Text $description 126))"" style=""text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#526070"" vertex=""1"" parent=""1""><mxGeometry x=""36"" y=""48"" width=""$($width - 180)"" height=""24"" as=""geometry""/></mxCell>")
+}
+$drawio.Add("        <mxCell id=""diagram-type"" value=""$(Escape-Svg $diagramType)"" style=""text;html=1;strokeColor=none;fillColor=none;align=right;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=13;fontColor=#526070"" vertex=""1"" parent=""1""><mxGeometry x=""$($width - 180)"" y=""16"" width=""144"" height=""24"" as=""geometry""/></mxCell>")
+
+foreach ($lane in $lanes) {
+    $b = $laneBox[$lane.Id]
+    $laneId = Get-CellId "lane" $lane.Id
+    $drawio.Add("        <mxCell id=""$laneId"" value=""$(Escape-Svg (Limit-Text $lane.Title 34))"" style=""swimlane;html=1;startSize=45;rounded=1;whiteSpace=wrap;strokeColor=#cbd5e1;fillColor=#f8fafc;fontSize=17;fontStyle=1;horizontal=1;"" vertex=""1"" parent=""1""><mxGeometry x=""$($b.X)"" y=""$($b.Y)"" width=""$($b.W)"" height=""$($b.H)"" as=""geometry""/></mxCell>")
+}
+
+foreach ($n in $nodes) {
+    $b = $nodeBox[$n.Id]
+    $nodeId = Get-CellId "node" $n.Id
+    $fill = "#ffffff"; $stroke = "#9aa8b8"; $dash = ""
+    if ($n.Kind -in @("auth", "identity", "trust")) { $fill = "#fff7ed"; $stroke = "#ea8a16" }
+    elseif ($n.Kind -in @("data", "database")) { $fill = "#f0f9ff"; $stroke = "#0284c7" }
+    elseif ($n.Kind -eq "external") { $dash = "dashed=1;" }
+    $drawio.Add("        <mxCell id=""$nodeId"" value="""" style=""rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=$fill;strokeColor=$stroke;strokeWidth=2;$dash"" vertex=""1"" parent=""1""><mxGeometry x=""$($b.X)"" y=""$($b.Y)"" width=""$($b.W)"" height=""$($b.H)"" as=""geometry""/></mxCell>")
+    $icon = Escape-DrawioStyleValue (Get-IconUri $n.Icon)
+    if ($icon) {
+        $drawio.Add("        <mxCell id=""$nodeId-icon"" value="""" style=""shape=image;html=1;imageAspect=0;aspect=fixed;image=$icon"" vertex=""1"" parent=""1""><mxGeometry x=""$($b.X + 18)"" y=""$($b.Y + 20)"" width=""56"" height=""56"" as=""geometry""/></mxCell>")
+    }
+    else {
+        $initial = if ($n.Label) { Escape-Svg $n.Label.Substring(0,1).ToUpperInvariant() } else { "?" }
+        $drawio.Add("        <mxCell id=""$nodeId-icon"" value=""$initial"" style=""ellipse;html=1;aspect=fixed;fillColor=#e2e8f0;strokeColor=#94a3b8;fontSize=22;fontStyle=1;fontColor=#475569"" vertex=""1"" parent=""1""><mxGeometry x=""$($b.X + 18)"" y=""$($b.Y + 20)"" width=""56"" height=""56"" as=""geometry""/></mxCell>")
+    }
+    $tx = $b.X + 88
+    if ($n.Sequence) {
+        $drawio.Add("        <mxCell id=""$nodeId-seq"" value=""$(Escape-Svg $n.Sequence)"" style=""text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#475569"" vertex=""1"" parent=""1""><mxGeometry x=""$tx"" y=""$($b.Y + 10)"" width=""180"" height=""20"" as=""geometry""/></mxCell>")
+        $titleY = $b.Y + 30
+    }
+    else { $titleY = $b.Y + 18 }
+    $drawio.Add("        <mxCell id=""$nodeId-title"" value=""$(Escape-Svg (Limit-Text $n.Label 28))"" style=""text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=14;fontStyle=1"" vertex=""1"" parent=""1""><mxGeometry x=""$tx"" y=""$titleY"" width=""178"" height=""24"" as=""geometry""/></mxCell>")
+    if ($n.Subtitle) {
+        $drawio.Add("        <mxCell id=""$nodeId-subtitle"" value=""$(Escape-Svg (Limit-Text $n.Subtitle 34))"" style=""text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=12;fontColor=#64748b"" vertex=""1"" parent=""1""><mxGeometry x=""$tx"" y=""$($b.Y + 58)"" width=""178"" height=""24"" as=""geometry""/></mxCell>")
+    }
+}
+
+$edgeIndex = 0
+foreach ($edge in $edges) {
+    $from = [string](Get-Val $edge "from" ""); $to = [string](Get-Val $edge "to" "")
+    if (-not $nodeBox.ContainsKey($from) -or -not $nodeBox.ContainsKey($to)) { continue }
+    $edgeIndex++
+    $sourceId = Get-CellId "node" $from
+    $targetId = Get-CellId "node" $to
+    $label = Escape-Svg (Limit-Text ([string](Get-Val $edge "label" "")) 24)
+    $drawio.Add("        <mxCell id=""edge-$edgeIndex"" value=""$label"" style=""edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#233142;strokeWidth=2;fontSize=12;fontStyle=1;fontColor=#334155"" edge=""1"" parent=""1"" source=""$sourceId"" target=""$targetId""><mxGeometry relative=""1"" as=""geometry""/></mxCell>")
+}
+
+$drawio.Add('      </root></mxGraphModel>')
+$drawio.Add('  </diagram>')
+$drawio.Add('</mxfile>')
+$drawioPath = Join-Path (Resolve-Path -LiteralPath $OutputDir).Path $drawioFileName
+[IO.File]::WriteAllText($drawioPath, ($drawio -join "`n"), [Text.UTF8Encoding]::new($false))
+Write-Host "Wrote $drawioPath"
+}

@@ -2,7 +2,7 @@
 
 Codex skill for generating Azure architecture and process-flow diagrams in locked-down Windows environments where Graphviz, Mermaid tooling, extra executables, or DLLs are not allowed.
 
-The skill turns any user-provided scenario into a JSON model, then renders a self-contained SVG using PowerShell and bundled SVG service icons. When PNG or JPG output is needed, it uses the installed Microsoft Edge renderer for SVG-to-PNG and .NET `System.Drawing` for JPG conversion.
+The skill turns any user-provided scenario into a JSON model, then renders a self-contained SVG and optional editable Draw.io `.drawio` file using PowerShell and bundled SVG service icons. When PNG or JPG output is needed, it uses the installed Microsoft Edge renderer for SVG-to-PNG and .NET `System.Drawing` for JPG conversion.
 
 ## What It Generates
 
@@ -14,7 +14,7 @@ The generator is scenario-driven. It can render arbitrary Azure flows such as:
 - hub-and-spoke resource access diagrams
 - process flows across Azure and external systems
 
-If no scenario is provided, the script renders a small MSP SRE Agent to Key Vault to client resources example as a smoke test.
+For reports, use the generated SVG. For manual editing, open the generated `.drawio` file in diagrams.net/draw.io. If no scenario is provided, the script renders a small MSP SRE Agent to Key Vault to client resources example as a smoke test.
 
 Bundled icon assets include:
 
@@ -32,7 +32,7 @@ Bundled icon assets include:
 ## Contents
 
 - [`SKILL.md`](./SKILL.md) - Codex skill instructions
-- [`scripts/New-AzureProcessFlow.ps1`](./scripts/New-AzureProcessFlow.ps1) - Generates self-contained SVG diagrams from scenario JSON
+- [`scripts/New-AzureProcessFlow.ps1`](./scripts/New-AzureProcessFlow.ps1) - Generates self-contained SVG and editable `.drawio` diagrams from scenario JSON
 - [`scripts/Export-SvgRasterImages.ps1`](./scripts/Export-SvgRasterImages.ps1) - Exports SVG diagrams to PNG and JPG
 - [`references/scenario-schema.md`](./references/scenario-schema.md) - Scenario JSON schema, icon keys, and example
 - [`references/icon-assets.md`](./references/icon-assets.md) - Icon source and update notes
@@ -66,16 +66,18 @@ Create a scenario JSON file:
 }
 ```
 
-Render SVG:
+Render SVG and editable Draw.io files:
 
 ```powershell
-.\scripts\New-AzureProcessFlow.ps1 -ScenarioPath .\scenario.json -OutputDir diagrams -Name app-service-data-flow
+.\scripts\New-AzureProcessFlow.ps1 -ScenarioPath .\scenario.json -OutputDir diagrams -Name app-service-data-flow -OutputFormat Both
 ```
+
+Use `-OutputFormat Svg` or `-OutputFormat Drawio` when only one source format is needed.
 
 Render the built-in smoke-test example:
 
 ```powershell
-.\scripts\New-AzureProcessFlow.ps1 -OutputDir diagrams
+.\scripts\New-AzureProcessFlow.ps1 -OutputDir diagrams -OutputFormat Both
 ```
 
 Export PNG and JPG copies:
@@ -95,12 +97,12 @@ Copy-Item -LiteralPath .\windows-azure-diagrams -Destination "$env:USERPROFILE\.
 Then invoke it in Codex with a scenario:
 
 ```text
-Use $windows-azure-diagrams to create a PNG and SVG architecture diagram for an App Service using managed identity to read Key Vault secrets and write to SQL Database.
+Use $windows-azure-diagrams to create SVG, .drawio, PNG, and JPG architecture diagrams for an App Service using managed identity to read Key Vault secrets and write to SQL Database.
 ```
 
 ## Notes
 
-- The generated SVGs are self-contained because icons are embedded as data URIs.
+- The generated SVGs and `.drawio` files are self-contained because icons are embedded as data URIs.
 - The package does not include `.exe` or `.dll` files.
 - PNG/JPG export requires Microsoft Edge to already be installed.
-- Prefer changing the scenario JSON and regenerating outputs instead of manually editing raster images.
+- Prefer changing the scenario JSON and regenerating outputs. Use `.drawio` only when manual visual editing is needed.

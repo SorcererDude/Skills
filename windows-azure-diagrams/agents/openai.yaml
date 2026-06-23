@@ -1,4 +1,4 @@
 interface:
   display_name: "Windows Azure Diagrams"
-  short_description: "Generate arbitrary Azure diagrams on Windows"
-  default_prompt: "Use $windows-azure-diagrams to turn this scenario into an Azure architecture or process-flow diagram without Graphviz."
+  short_description: "Generate editable Azure diagrams on Windows"
+  default_prompt: "Use $windows-azure-diagrams to turn this scenario into SVG and .drawio Azure diagrams without Graphviz."

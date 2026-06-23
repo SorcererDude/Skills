@@ -1,6 +1,6 @@
 # Scenario Schema
 
-Use this schema when translating a user's architecture or process-flow request into a renderable diagram.
+Use this schema when translating a user's architecture or process-flow request into a renderable diagram. The same scenario JSON can render SVG, editable Draw.io `.drawio`, or both.
 
 ## JSON Shape
 
@@ -32,8 +32,8 @@ Use this schema when translating a user's architecture or process-flow request i
 
 ## Fields
 
-- `title`: Required. Used for the SVG title and default file name.
-- `description`: Optional but recommended. Used for SVG accessibility metadata.
+- `title`: Required. Used for the SVG title, Draw.io page metadata, and default file name.
+- `description`: Optional but recommended. Used for SVG accessibility metadata and the Draw.io description text.
 - `diagramType`: Optional. Use `process`, `architecture`, `identity`, `network`, or a short user-relevant type.
 - `lanes`: Optional. Use lanes for zones, actors, trust boundaries, tenants, subscriptions, or system groups. If omitted, lanes are inferred from node `lane` values.
 - `nodes`: Required. Each node needs a stable `id`, short `label`, and `lane`.
