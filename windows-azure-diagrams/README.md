@@ -1,18 +1,22 @@
 # Windows Azure Diagrams
 
-Codex skill for generating Azure process-flow diagrams in locked-down Windows environments where Graphviz, Mermaid tooling, extra executables, or DLLs are not allowed.
+Codex skill for generating Azure architecture and process-flow diagrams in locked-down Windows environments where Graphviz, Mermaid tooling, extra executables, or DLLs are not allowed.
 
-The skill creates SVG diagrams using PowerShell and bundled SVG service icons. When PNG or JPG output is needed, it uses the installed Microsoft Edge renderer for SVG-to-PNG and .NET `System.Drawing` for JPG conversion.
+The skill turns any user-provided scenario into a JSON model, then renders a self-contained SVG using PowerShell and bundled SVG service icons. When PNG or JPG output is needed, it uses the installed Microsoft Edge renderer for SVG-to-PNG and .NET `System.Drawing` for JPG conversion.
 
 ## What It Generates
 
-The bundled generator creates three Azure SRE flow examples:
+The generator is scenario-driven. It can render arbitrary Azure flows such as:
 
-- Basic MSP-to-client authentication flow
-- MSP/client swimlane flow
-- Client resource fan-out flow
+- MSP/client authentication and support flows
+- application-to-data architecture diagrams
+- identity and Key Vault access flows
+- hub-and-spoke resource access diagrams
+- process flows across Azure and external systems
 
-The diagrams include icons for:
+If no scenario is provided, the script renders a small MSP SRE Agent to Key Vault to client resources example as a smoke test.
+
+Bundled icon assets include:
 
 - Azure SRE Agent
 - Key Vault
@@ -28,14 +32,47 @@ The diagrams include icons for:
 ## Contents
 
 - [`SKILL.md`](./SKILL.md) - Codex skill instructions
-- [`scripts/New-AzureProcessFlow.ps1`](./scripts/New-AzureProcessFlow.ps1) - Generates self-contained SVG diagrams
+- [`scripts/New-AzureProcessFlow.ps1`](./scripts/New-AzureProcessFlow.ps1) - Generates self-contained SVG diagrams from scenario JSON
 - [`scripts/Export-SvgRasterImages.ps1`](./scripts/Export-SvgRasterImages.ps1) - Exports SVG diagrams to PNG and JPG
-- [`assets/icons/`](./assets/icons/) - Bundled SVG service icons
+- [`references/scenario-schema.md`](./references/scenario-schema.md) - Scenario JSON schema, icon keys, and example
 - [`references/icon-assets.md`](./references/icon-assets.md) - Icon source and update notes
+- [`assets/icons/`](./assets/icons/) - Bundled SVG service icons
 
 ## Usage
 
-From this folder:
+Create a scenario JSON file:
+
+```json
+{
+  "title": "App service reads secrets and writes data",
+  "description": "Application flow using Key Vault, managed identity, and SQL Database.",
+  "diagramType": "architecture",
+  "lanes": [
+    { "id": "app", "title": "Application" },
+    { "id": "security", "title": "Security" },
+    { "id": "data", "title": "Data" }
+  ],
+  "nodes": [
+    { "id": "web", "label": "App Service", "subtitle": "web API", "lane": "app", "icon": "app-service", "order": 1 },
+    { "id": "identity", "label": "Managed Identity", "subtitle": "token request", "lane": "security", "icon": "managed-identity", "kind": "auth", "order": 1 },
+    { "id": "vault", "label": "Key Vault", "subtitle": "secret retrieval", "lane": "security", "icon": "key-vault", "order": 2 },
+    { "id": "sql", "label": "SQL Database", "subtitle": "application data", "lane": "data", "icon": "sql-database", "kind": "data", "order": 1 }
+  ],
+  "edges": [
+    { "from": "web", "to": "identity", "label": "requests token" },
+    { "from": "identity", "to": "vault", "label": "authorizes" },
+    { "from": "web", "to": "sql", "label": "writes data" }
+  ]
+}
+```
+
+Render SVG:
+
+```powershell
+.\scripts\New-AzureProcessFlow.ps1 -ScenarioPath .\scenario.json -OutputDir diagrams -Name app-service-data-flow
+```
+
+Render the built-in smoke-test example:
 
 ```powershell
 .\scripts\New-AzureProcessFlow.ps1 -OutputDir diagrams
@@ -44,14 +81,7 @@ From this folder:
 Export PNG and JPG copies:
 
 ```powershell
-.\scripts\Export-SvgRasterImages.ps1 -InputDir diagrams -OutputDir raster -Filter *azure-icons.svg -Format Both
-```
-
-Use only one raster format:
-
-```powershell
-.\scripts\Export-SvgRasterImages.ps1 -InputDir diagrams -OutputDir raster -Filter *azure-icons.svg -Format Png
-.\scripts\Export-SvgRasterImages.ps1 -InputDir diagrams -OutputDir raster -Filter *azure-icons.svg -Format Jpg
+.\scripts\Export-SvgRasterImages.ps1 -InputDir diagrams -OutputDir raster -Filter app-service-data-flow.svg -Format Both
 ```
 
 ## Installing As A Codex Skill
@@ -62,10 +92,10 @@ Copy the `windows-azure-diagrams` folder into your Codex skills directory:
 Copy-Item -LiteralPath .\windows-azure-diagrams -Destination "$env:USERPROFILE\.codex\skills" -Recurse -Force
 ```
 
-Then invoke it in Codex with:
+Then invoke it in Codex with a scenario:
 
 ```text
-Use $windows-azure-diagrams to create an Azure SRE Agent to Key Vault to client resources diagram as PNG and SVG.
+Use $windows-azure-diagrams to create a PNG and SVG architecture diagram for an App Service using managed identity to read Key Vault secrets and write to SQL Database.
 ```
 
 ## Notes
@@ -73,4 +103,4 @@ Use $windows-azure-diagrams to create an Azure SRE Agent to Key Vault to client 
 - The generated SVGs are self-contained because icons are embedded as data URIs.
 - The package does not include `.exe` or `.dll` files.
 - PNG/JPG export requires Microsoft Edge to already be installed.
-- Prefer editing the SVG templates in `New-AzureProcessFlow.ps1` and regenerating outputs instead of manually editing raster images.
+- Prefer changing the scenario JSON and regenerating outputs instead of manually editing raster images.

@@ -1,4 +1,4 @@
 interface:
   display_name: "Windows Azure Diagrams"
-  short_description: "Generate Windows-native Azure process diagrams"
-  default_prompt: "Use $windows-azure-diagrams to create SVG, PNG, and JPG Azure process diagrams without Graphviz."
+  short_description: "Generate arbitrary Azure diagrams on Windows"
+  default_prompt: "Use $windows-azure-diagrams to turn this scenario into an Azure architecture or process-flow diagram without Graphviz."

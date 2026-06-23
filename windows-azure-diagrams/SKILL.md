@@ -1,51 +1,57 @@
 ---
 name: windows-azure-diagrams
-description: Generate Azure process-flow and architecture-style diagrams in locked-down Windows environments where Graphviz, Mermaid tooling, extra executables, or DLLs are not allowed. Use when the user needs SVG, PNG, or JPG diagrams with real Azure service icons, especially MSP/client authentication flows involving Azure SRE Agent, Key Vault, identity, and client resources.
+description: Generate arbitrary Azure architecture and process-flow diagrams in locked-down Windows environments where Graphviz, Mermaid tooling, extra executables, or DLLs are not allowed. Use when the user provides any Azure scenario, resource interaction, MSP/client flow, authentication flow, or architecture/process diagram request and needs SVG, PNG, or JPG output with real Azure service icons.
 ---
 
 # Windows Azure Diagrams
 
 ## Overview
 
-Create Azure process diagrams with PowerShell-generated SVG and bundled SVG icon assets. Use installed Microsoft Edge only for raster export when PNG or JPG output is requested; do not add Graphviz, Mermaid CLIs, npm packages, EXE files, or DLL files.
+Create Azure architecture or process-flow diagrams by translating the user's scenario into a small JSON model, then rendering it with bundled PowerShell and SVG icon assets. Use installed Microsoft Edge only for PNG/JPG export. Do not add Graphviz, Mermaid CLIs, npm packages, EXE files, or DLL files.
 
-The bundled workflow creates three example diagrams:
-
-- basic MSP-to-client authentication flow
-- MSP/client swimlane flow
-- client resource fan-out flow
+The bundled MSP/SRE flow is only the default example when no scenario is supplied. For real work, generate a scenario JSON file from the user's requested flow and pass it to `scripts/New-AzureProcessFlow.ps1`.
 
 ## Workflow
 
-1. Generate SVG diagrams:
+1. Infer the diagram from the user's request:
+   - lanes or zones, such as MSP, client, identity, data, platform, or external systems
+   - nodes, including resource names, short subtitles, icon choices, and optional sequence numbers
+   - edges, including direction and concise labels
+2. Write a scenario JSON file. Read `references/scenario-schema.md` when you need the schema, icon keys, or a compact example.
+3. Generate SVG:
 
 ```powershell
-.\scripts\New-AzureProcessFlow.ps1 -OutputDir diagrams
+.\scripts\New-AzureProcessFlow.ps1 -ScenarioPath scenario.json -OutputDir diagrams -Name requested-diagram
 ```
 
-2. Export PNG/JPG when requested:
+4. Export PNG/JPG when requested:
 
 ```powershell
-.\scripts\Export-SvgRasterImages.ps1 -InputDir diagrams -OutputDir raster -Filter *azure-icons.svg -Format Both
+.\scripts\Export-SvgRasterImages.ps1 -InputDir diagrams -OutputDir raster -Filter requested-diagram.svg -Format Both
 ```
 
 Use `-Format Png` or `-Format Jpg` when only one raster format is needed.
 
+## Scenario Authoring
+
+Use the user's language as the source of truth. Do not force the scenario into the MSP/SRE example unless that is what the user asked for.
+
+Keep diagrams readable:
+
+- Use 2-5 lanes for architecture zones, responsibility boundaries, or process actors.
+- Keep labels short and put detail in `subtitle`.
+- Use `kind: "auth"` for identity, trust, authentication, authorization, and credential exchange nodes.
+- Use `kind: "data"` for databases, storage, telemetry stores, or other data resources.
+- Use `kind: "external"` for out-of-tenant, third-party, or unmanaged systems.
+- Use real bundled icons first. If an icon is missing, choose the closest available icon or add only the required official SVG asset to `assets/icons/`.
+
 ## Script Guidance
 
-- `scripts/New-AzureProcessFlow.ps1` embeds icons as SVG data URIs so generated diagrams are self-contained.
+- `scripts/New-AzureProcessFlow.ps1` accepts `-ScenarioPath` JSON and generates a self-contained SVG with embedded icon data URIs.
+- If `-ScenarioPath` is omitted, the script renders the built-in MSP SRE Agent to Key Vault to client resources example as a smoke test.
 - `scripts/Export-SvgRasterImages.ps1` renders SVG to PNG using the installed Microsoft Edge binary in headless mode, then uses .NET `System.Drawing` to create JPG copies with a white background.
 - Keep outputs in user-specified folders. Default to `diagrams/` for SVG and `raster/` for PNG/JPG.
 - If Edge is not on `PATH`, the exporter checks the standard Windows install paths.
-- Do not download or install renderers unless the user explicitly asks and approvals allow it.
-
-## Customization
-
-Modify the SVG template blocks in `New-AzureProcessFlow.ps1` for labels, node positions, edge routing, and resource choices. Keep the diagram source text-based and deterministic.
-
-Use bundled icons from `assets/icons/` before looking elsewhere. If a requested Azure service icon is missing, prefer the official Microsoft Azure Architecture Icons pack and copy only the needed SVG asset into `assets/icons/`; avoid adding the full ZIP to the skill.
-
-The current Azure SRE Agent icon is bundled as `assets/icons/sre-agent.svg`.
 
 ## Validation
 
@@ -54,6 +60,6 @@ After generation:
 1. Parse generated SVGs as XML.
 2. For PNG/JPG output, check dimensions with .NET `System.Drawing`.
 3. Visually inspect at least one changed PNG when layout, labels, icons, or routing changed.
-4. Scan the skill/output workspace for added `.exe` and `.dll` files if the user has application-whitelisting constraints.
+4. Scan the skill/output workspace for added `.exe` and `.dll` files when the user has application-whitelisting constraints.
 
-Prefer fixing source SVG templates and regenerating outputs over editing raster files directly.
+Prefer fixing the scenario JSON or script and regenerating outputs over editing raster files directly.

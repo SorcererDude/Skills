@@ -1,6 +1,6 @@
 # Icon Assets
 
-Bundled icons live in `assets/icons/` and are loaded by filename from `scripts/New-AzureProcessFlow.ps1`.
+Bundled icons live in `assets/icons/` and are loaded by icon key from `scripts/New-AzureProcessFlow.ps1`.
 
 Included service icons:
 
@@ -15,4 +15,17 @@ Included service icons:
 - `sql-database.svg`: Microsoft Azure Architecture Icons, SQL Database
 - `monitor.svg`: Microsoft Azure Architecture Icons, Monitor
 
-When adding services, copy only the required SVG files into `assets/icons/` and update the `$icons` map in `New-AzureProcessFlow.ps1`.
+Current scenario icon keys:
+
+- `sre-agent`
+- `key-vault`
+- `app-registration`
+- `managed-identity`
+- `resource-group`
+- `virtual-machine` or `vm`
+- `app-service`
+- `storage-account`
+- `sql-database`
+- `monitor`
+
+When adding services, copy only the required SVG files into `assets/icons/` and update the `$iconFiles` map in `New-AzureProcessFlow.ps1`.
